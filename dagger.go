@@ -69,7 +69,7 @@ func (d *Dagger) Destroy() {
 }
 
 func (d *Dagger) BundleBuildpack() error {
-	if err := copyFile(filepath.Join(d.rootDir, "buildpack.toml"), filepath.Join(d.buildpackDir, "buildpack.toml")); err != nil {
+	if err := CopyFile(filepath.Join(d.rootDir, "buildpack.toml"), filepath.Join(d.buildpackDir, "buildpack.toml")); err != nil {
 		return err
 	}
 
@@ -256,7 +256,7 @@ func (d *Dagger) Pack(appDir string) (*App, error) {
 		return nil, err
 	}
 
-	tmpImageName := randomString(16)
+	tmpImageName := RandomString(16)
 	cmd = exec.Command("docker", "build", filepath.Join(d.rootDir, "fixtures", "lifecycle"), "-t", tmpImageName)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -287,7 +287,7 @@ func (d *Dagger) Pack(appDir string) (*App, error) {
 	}
 	// TODO : remove above the above when pack create-builder works
 
-	appImageName := randomString(16)
+	appImageName := RandomString(16)
 	cmd = exec.Command("pack", "build", appImageName, "--run-image", os.Getenv("CNB_RUN_IMAGE"), "--builder", builderImage, "--no-pull")
 	cmd.Dir = appDir
 	cmd.Stdout = os.Stderr

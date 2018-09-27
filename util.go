@@ -1,12 +1,50 @@
 package dagger
 
 import (
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
+	"path/filepath"
 )
 
-func copyFile(from, to string) error {
+func FindRoot() (string, error) {
+	dir, err := filepath.Abs(".")
+	if err != nil {
+		return "", err
+	}
+
+	for {
+		if dir == "/" {
+			return "", fmt.Errorf("could not find go.mod file in the directory hierarchy")
+		}
+
+		if exist, err := FileExists(filepath.Join(dir, "go.mod")); err != nil {
+			return "", err
+		} else if exist {
+			return dir, nil
+		}
+
+		dir, err = filepath.Abs(filepath.Join(dir, ".."))
+		if err != nil {
+			return "", err
+		}
+	}
+}
+
+func FileExists(filePath string) (bool, error) {
+	_, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func CopyFile(from, to string) error {
 	source, err := os.Open(from)
 	if err != nil {
 		return err
@@ -23,7 +61,7 @@ func copyFile(from, to string) error {
 	return err
 }
 
-func randomString(n int) string {
+func RandomString(n int) string {
 	letterRunes := []rune("abcdefghijklmnopqrstuvwxyz")
 	b := make([]rune, n)
 	for i := range b {
