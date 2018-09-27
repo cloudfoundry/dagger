@@ -22,7 +22,8 @@ const (
 )
 
 type Dagger struct {
-	rootDir, workspaceDir, buildpackDir, packDir string
+	rootDir, workspaceDir, buildpackDir, inputsDir, packDir string
+	buildpack                                               libbuildpackV3.Buildpack
 }
 
 func NewDagger(rootDir string) (*Dagger, error) {
@@ -44,17 +45,40 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		return nil, err
 	}
 
+	inputsDir, err := ioutil.TempDir("/tmp", "inputs")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.Chmod(inputsDir, os.ModePerm); err != nil {
+		return nil, err
+	}
+
 	packDir, err := ioutil.TempDir("/tmp", "pack")
 	if err != nil {
 		return nil, err
 	}
 
-	return &Dagger{
+	buildpack := libbuildpackV3.Buildpack{}
+	_, err = toml.DecodeFile(filepath.Join(rootDir, "buildpack.toml"), &buildpack)
+	if err != nil {
+		return nil, err
+	}
+
+	dagg := &Dagger{
 		rootDir:      rootDir,
 		workspaceDir: workspaceDir,
 		buildpackDir: buildpackDir,
+		inputsDir:    inputsDir,
 		packDir:      packDir,
-	}, nil
+		buildpack:    buildpack,
+	}
+
+	if err := dagg.bundleBuildpack(); err != nil {
+		return nil, err
+	}
+
+	return dagg, nil
 }
 
 func (d *Dagger) Destroy() {
@@ -64,11 +88,14 @@ func (d *Dagger) Destroy() {
 	os.RemoveAll(d.buildpackDir)
 	d.buildpackDir = ""
 
+	os.RemoveAll(d.inputsDir)
+	d.inputsDir = ""
+
 	os.RemoveAll(d.packDir)
 	d.packDir = ""
 }
 
-func (d *Dagger) BundleBuildpack() error {
+func (d *Dagger) bundleBuildpack() error {
 	if err := CopyFile(filepath.Join(d.rootDir, "buildpack.toml"), filepath.Join(d.buildpackDir, "buildpack.toml")); err != nil {
 		return err
 	}
@@ -79,9 +106,11 @@ func (d *Dagger) BundleBuildpack() error {
 
 	for _, b := range []string{"detect", "build"} {
 		cmd := exec.Command(
-			"go", "build",
-			"-o", filepath.Join(d.buildpackDir, "bin", b),
-			filepath.Join("github.com", "cloudfoundry", "nodejs-cnb-buildpack", b, "cmd"),
+			"go",
+			"build",
+			"-o",
+			filepath.Join(d.buildpackDir, "bin", b),
+			filepath.Join(d.rootDir, b, "cmd"),
 		)
 		cmd.Env = append(os.Environ(), "GOOS=linux")
 		cmd.Stdout = os.Stderr
@@ -104,7 +133,11 @@ type DetectResult struct {
 	BuildPlan libbuildpackV3.BuildPlan
 }
 
-func (d *Dagger) Detect(appDir string) (*DetectResult, error) {
+func (d *Dagger) Detect(appDir, orderFile string) (*DetectResult, error) {
+	if err := CopyFile(orderFile, filepath.Join(d.inputsDir, "order.toml")); err != nil {
+		return nil, err
+	}
+
 	cmd := exec.Command(
 		"docker",
 		"run",
@@ -114,17 +147,17 @@ func (d *Dagger) Detect(appDir string) (*DetectResult, error) {
 		"-v",
 		fmt.Sprintf("%s:/workspace/app", appDir),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/org.cloudfoundry.buildpacks.nodejs/latest", d.buildpackDir),
+		fmt.Sprintf("%s:/buildpacks/%s/latest", d.buildpackDir, d.buildpack.Info.ID),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/org.cloudfoundry.buildpacks.nodejs/1.6.32", d.buildpackDir),
+		fmt.Sprintf("%s:/buildpacks/%s/%s", d.buildpackDir, d.buildpack.Info.ID, d.buildpack.Info.Version),
 		"-v",
-		fmt.Sprintf("%s:/input", filepath.Join(d.rootDir, "fixtures", "lifecycle")),
+		fmt.Sprintf("%s:/inputs", d.inputsDir),
 		os.Getenv("CNB_BUILD_IMAGE"),
 		"/lifecycle/detector",
 		"-buildpacks",
 		"/buildpacks",
 		"-order",
-		"/input/order.toml",
+		"/inputs/order.toml",
 		"-group",
 		"/workspace/group.toml",
 		"-plan",
@@ -163,7 +196,15 @@ type BuildResult struct {
 	Layer          Layer
 }
 
-func (d *Dagger) Build(appDir string) (*BuildResult, error) {
+func (d *Dagger) Build(appDir, groupFile, planFile string) (*BuildResult, error) {
+	if err := CopyFile(groupFile, filepath.Join(d.inputsDir, "group.toml")); err != nil {
+		return nil, err
+	}
+
+	if err := CopyFile(planFile, filepath.Join(d.inputsDir, "plan.toml")); err != nil {
+		return nil, err
+	}
+
 	cmd := exec.Command(
 		"docker",
 		"run",
@@ -173,19 +214,19 @@ func (d *Dagger) Build(appDir string) (*BuildResult, error) {
 		"-v",
 		fmt.Sprintf("%s:/workspace/app", appDir),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/org.cloudfoundry.buildpacks.nodejs/latest", d.buildpackDir),
+		fmt.Sprintf("%s:/buildpacks/%s/latest", d.buildpackDir, d.buildpack.Info.ID),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/org.cloudfoundry.buildpacks.nodejs/1.6.32", d.buildpackDir),
+		fmt.Sprintf("%s:/buildpacks/%s/%s", d.buildpackDir, d.buildpack.Info.ID, d.buildpack.Info.Version),
 		"-v",
-		fmt.Sprintf("%s:/input", filepath.Join(d.rootDir, "fixtures", "lifecycle")),
+		fmt.Sprintf("%s:/inputs", d.inputsDir),
 		os.Getenv("CNB_BUILD_IMAGE"),
 		"/lifecycle/builder",
 		"-buildpacks",
 		"/buildpacks",
 		"-group",
-		"/input/group.toml",
+		"/inputs/group.toml",
 		"-plan",
-		"/input/plan.toml",
+		"/inputs/plan.toml",
 	)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
@@ -193,7 +234,7 @@ func (d *Dagger) Build(appDir string) (*BuildResult, error) {
 		return nil, err
 	}
 
-	rootDir := filepath.Join(d.workspaceDir, "org.cloudfoundry.buildpacks.nodejs")
+	rootDir := filepath.Join(d.workspaceDir, d.buildpack.Info.ID)
 
 	launchMetadata := libbuildpackV3.LaunchMetadata{}
 	_, err := toml.DecodeFile(filepath.Join(rootDir, "launch.toml"), &launchMetadata)
@@ -201,20 +242,21 @@ func (d *Dagger) Build(appDir string) (*BuildResult, error) {
 		return nil, err
 	}
 
-	nodeLayer := Layer{Root: rootDir}
-	_, err = toml.DecodeFile(filepath.Join(nodeLayer.Root, "node.toml"), &nodeLayer.Metadata)
+	// TODO : do not hard code node.toml
+	launchLayer := Layer{Root: rootDir}
+	_, err = toml.DecodeFile(filepath.Join(launchLayer.Root, "node.toml"), &launchLayer.Metadata)
 	if err != nil {
 		return nil, err
 	}
 
 	return &BuildResult{
 		LaunchMetadata: launchMetadata,
-		Layer:          nodeLayer,
+		Layer:          launchLayer,
 	}, nil
 }
 
-func (d *Dagger) createBuilderFile() (string, error) {
-	builderTemplate, err := template.ParseFiles(filepath.Join(d.rootDir, "fixtures", "lifecycle", "builder.toml.tmpl"))
+func (d *Dagger) createBuilderFile(builderFileTemplate string) (string, error) {
+	builderTemplate, err := template.ParseFiles(builderFileTemplate)
 	if err != nil {
 		return "", err
 	}
@@ -229,9 +271,9 @@ func (d *Dagger) createBuilderFile() (string, error) {
 		URI     string
 		Version string
 	}{
-		ID:      "org.cloudfoundry.buildpacks.nodejs",
+		ID:      d.buildpack.Info.ID,
 		URI:     d.buildpackDir,
-		Version: "1.6.32",
+		Version: d.buildpack.Info.Version,
 	}
 	err = builderTemplate.Execute(builderFile, bpData)
 	if err != nil {
@@ -241,8 +283,8 @@ func (d *Dagger) createBuilderFile() (string, error) {
 	return builderFile.Name(), nil
 }
 
-func (d *Dagger) Pack(appDir string) (*App, error) {
-	builderFile, err := d.createBuilderFile()
+func (d *Dagger) Pack(appDir, builderFileTemplate string) (*App, error) {
+	builderFile, err := d.createBuilderFile(builderFileTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -256,15 +298,7 @@ func (d *Dagger) Pack(appDir string) (*App, error) {
 		return nil, err
 	}
 
-	tmpImageName := RandomString(16)
-	cmd = exec.Command("docker", "build", filepath.Join(d.rootDir, "fixtures", "lifecycle"), "-t", tmpImageName)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	cmd = exec.Command("docker", "run", "--user", "root", tmpImageName, "chmod", "0755", "/buildpacks")
+	cmd = exec.Command("docker", "run", "--user", "root", originalImage, "chmod", "0755", "/buildpacks")
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
