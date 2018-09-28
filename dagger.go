@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	libbuildpackV3 "github.com/buildpack/libbuildpack"
+	"github.com/buildpack/libbuildpack"
 )
 
 const (
@@ -22,8 +22,8 @@ const (
 )
 
 type Dagger struct {
-	rootDir, workspaceDir, buildpackDir, inputsDir, packDir string
-	buildpack                                               libbuildpackV3.Buildpack
+	rootDir, workspaceDir, cacheDir, buildpackDir, inputsDir, packDir string
+	buildpack                                                         libbuildpack.Buildpack
 }
 
 func NewDagger(rootDir string) (*Dagger, error) {
@@ -45,6 +45,15 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		return nil, err
 	}
 
+	cacheDir, err := ioutil.TempDir("/tmp", "cache")
+	if err != nil {
+		return nil, err
+	}
+
+	if err := os.Chmod(cacheDir, os.ModePerm); err != nil {
+		return nil, err
+	}
+
 	inputsDir, err := ioutil.TempDir("/tmp", "inputs")
 	if err != nil {
 		return nil, err
@@ -59,7 +68,7 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		return nil, err
 	}
 
-	buildpack := libbuildpackV3.Buildpack{}
+	buildpack := libbuildpack.Buildpack{}
 	_, err = toml.DecodeFile(filepath.Join(rootDir, "buildpack.toml"), &buildpack)
 	if err != nil {
 		return nil, err
@@ -68,6 +77,7 @@ func NewDagger(rootDir string) (*Dagger, error) {
 	dagg := &Dagger{
 		rootDir:      rootDir,
 		workspaceDir: workspaceDir,
+		cacheDir:     cacheDir,
 		buildpackDir: buildpackDir,
 		inputsDir:    inputsDir,
 		packDir:      packDir,
@@ -84,6 +94,9 @@ func NewDagger(rootDir string) (*Dagger, error) {
 func (d *Dagger) Destroy() {
 	os.RemoveAll(d.workspaceDir)
 	d.workspaceDir = ""
+
+	os.RemoveAll(d.cacheDir)
+	d.cacheDir = ""
 
 	os.RemoveAll(d.buildpackDir)
 	d.buildpackDir = ""
@@ -123,18 +136,22 @@ func (d *Dagger) bundleBuildpack() error {
 	return nil
 }
 
-type DetectResult struct {
-	Group struct {
-		Buildpacks []struct {
-			Id      string
-			Version string
-		}
-	}
-	BuildPlan libbuildpackV3.BuildPlan
+//Group should be in libbuildpack
+type Group struct {
+	Buildpacks []libbuildpack.BuildpackInfo
 }
 
-func (d *Dagger) Detect(appDir, orderFile string) (*DetectResult, error) {
-	if err := CopyFile(orderFile, filepath.Join(d.inputsDir, "order.toml")); err != nil {
+type DetectResult struct {
+	Group     Group
+	BuildPlan libbuildpack.BuildPlan
+}
+
+type Order struct {
+	Groups []Group
+}
+
+func (d *Dagger) Detect(appDir string, order Order) (*DetectResult, error) {
+	if err := d.writeInput(order, "order.toml");err != nil {
 		return nil, err
 	}
 
@@ -184,24 +201,57 @@ func (d *Dagger) Detect(appDir, orderFile string) (*DetectResult, error) {
 	return result, nil
 }
 
-type Layer struct {
-	Metadata struct {
-		Version string
-	}
-	Root string
+type Metadata struct {
+	Version string
 }
 
 type BuildResult struct {
-	LaunchMetadata libbuildpackV3.LaunchMetadata
-	Layer          Layer
+	LaunchRootDir string
+	CacheRootDir  string
 }
 
-func (d *Dagger) Build(appDir, groupFile, planFile string) (*BuildResult, error) {
-	if err := CopyFile(groupFile, filepath.Join(d.inputsDir, "group.toml")); err != nil {
+func (b *BuildResult) GetLayerMetadata(dep string) (Metadata, bool, error) {
+	var metadata Metadata
+
+	file := filepath.Join(b.LaunchRootDir, fmt.Sprintf("%s.toml", dep))
+	if exists, err := FileExists(file); err != nil {
+		return metadata, false, err
+	} else if !exists {
+		return metadata, false, nil
+	}
+
+	_, err := toml.DecodeFile(file, &metadata)
+	if err != nil {
+		return metadata, false, err
+	}
+
+	return metadata, true, nil
+}
+
+func (b *BuildResult) GetLaunchMetadata() (libbuildpack.LaunchMetadata, bool, error) {
+	var metadata libbuildpack.LaunchMetadata
+
+	file := filepath.Join(b.LaunchRootDir, "launch.toml")
+	if exists, err := FileExists(file); err != nil {
+		return metadata, false, err
+	} else if !exists {
+		return metadata, false, nil
+	}
+
+	_, err := toml.DecodeFile(file, &metadata)
+	if err != nil {
+		return metadata, false, err
+	}
+
+	return metadata, true, nil
+}
+
+func (d *Dagger) Build(appDir string, group Group, plan libbuildpack.BuildPlan) (*BuildResult, error) {
+	if err := d.writeInput(group, "group.toml");err != nil {
 		return nil, err
 	}
 
-	if err := CopyFile(planFile, filepath.Join(d.inputsDir, "plan.toml")); err != nil {
+	if err := d.writeInput(plan, "plan.toml");err != nil {
 		return nil, err
 	}
 
@@ -213,6 +263,8 @@ func (d *Dagger) Build(appDir, groupFile, planFile string) (*BuildResult, error)
 		fmt.Sprintf("%s:/workspace", d.workspaceDir),
 		"-v",
 		fmt.Sprintf("%s:/workspace/app", appDir),
+		"-v",
+		fmt.Sprintf("%s:/cache", d.cacheDir),
 		"-v",
 		fmt.Sprintf("%s:/buildpacks/%s/latest", d.buildpackDir, d.buildpack.Info.ID),
 		"-v",
@@ -234,24 +286,9 @@ func (d *Dagger) Build(appDir, groupFile, planFile string) (*BuildResult, error)
 		return nil, err
 	}
 
-	rootDir := filepath.Join(d.workspaceDir, d.buildpack.Info.ID)
-
-	launchMetadata := libbuildpackV3.LaunchMetadata{}
-	_, err := toml.DecodeFile(filepath.Join(rootDir, "launch.toml"), &launchMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO : do not hard code node.toml
-	launchLayer := Layer{Root: rootDir}
-	_, err = toml.DecodeFile(filepath.Join(launchLayer.Root, "node.toml"), &launchLayer.Metadata)
-	if err != nil {
-		return nil, err
-	}
-
 	return &BuildResult{
-		LaunchMetadata: launchMetadata,
-		Layer:          launchLayer,
+		LaunchRootDir: filepath.Join(d.workspaceDir, d.buildpack.Info.ID),
+		CacheRootDir:  filepath.Join(d.cacheDir, d.buildpack.Info.ID),
 	}, nil
 }
 
@@ -330,6 +367,15 @@ func (d *Dagger) Pack(appDir, builderFileTemplate string) (*App, error) {
 		return nil, err
 	}
 	return &App{imageName: appImageName}, nil
+}
+
+func (d *Dagger) writeInput(obj interface{}, fileName string) error {
+	objString, err := ToTomlString(obj)
+	if err != nil {
+		return err
+	}
+
+	return WriteToFile(bytes.NewBufferString(objString), filepath.Join(d.inputsDir, fileName), os.ModePerm)
 }
 
 type App struct {
