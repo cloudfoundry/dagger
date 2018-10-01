@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -151,7 +152,7 @@ type Order struct {
 }
 
 func (d *Dagger) Detect(appDir string, order Order) (*DetectResult, error) {
-	if err := d.writeInput(order, "order.toml");err != nil {
+	if err := d.writeInput(order, "order.toml"); err != nil {
 		return nil, err
 	}
 
@@ -228,6 +229,47 @@ func (b *BuildResult) GetLayerMetadata(dep string) (Metadata, bool, error) {
 	return metadata, true, nil
 }
 
+func (b *BuildResult) GetCacheLayerEnv(dep string) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	envFiles, err := filepath.Glob(filepath.Join(b.CacheRootDir, dep, "env", "*"))
+	if err != nil {
+		return envMap, err
+	}
+
+	for _, path := range envFiles {
+		value, err := ioutil.ReadFile(path)
+		if err != nil {
+			return envMap, err
+		}
+		key := strings.TrimSuffix(filepath.Base(path), ".override")
+		envMap[key] = string(value)
+	}
+
+	return envMap, nil
+}
+
+func (b *BuildResult) GetLaunchLayerEnv(dep string) (map[string]string, error) {
+	envMap := make(map[string]string)
+
+	envFiles, err := filepath.Glob(filepath.Join(b.LaunchRootDir, dep, "profile.d", "*"))
+	if err != nil {
+		return envMap, err
+	}
+
+	for _, path := range envFiles {
+		data, err := ioutil.ReadFile(path)
+		if err != nil {
+			return envMap, err
+		}
+		regex := regexp.MustCompile(`export\s+(.*)=(.*)`)
+		matches := regex.FindStringSubmatch(string(data))
+		envMap[matches[1]] = matches[2]
+	}
+
+	return envMap, nil
+}
+
 func (b *BuildResult) GetLaunchMetadata() (libbuildpack.LaunchMetadata, bool, error) {
 	var metadata libbuildpack.LaunchMetadata
 
@@ -247,11 +289,11 @@ func (b *BuildResult) GetLaunchMetadata() (libbuildpack.LaunchMetadata, bool, er
 }
 
 func (d *Dagger) Build(appDir string, group Group, plan libbuildpack.BuildPlan) (*BuildResult, error) {
-	if err := d.writeInput(group, "group.toml");err != nil {
+	if err := d.writeInput(group, "group.toml"); err != nil {
 		return nil, err
 	}
 
-	if err := d.writeInput(plan, "plan.toml");err != nil {
+	if err := d.writeInput(plan, "plan.toml"); err != nil {
 		return nil, err
 	}
 
