@@ -107,7 +107,7 @@ func (d *Dagger) Destroy() {
 }
 
 func (d *Dagger) bundleBuildpack() (string, error) {
-	cmd := exec.Command("package.sh")
+	cmd := exec.Command("bash", "package.sh")
 	cmd.Dir = filepath.Join(d.rootDir, "scripts")
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
