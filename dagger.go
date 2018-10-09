@@ -28,15 +28,6 @@ type Dagger struct {
 }
 
 func NewDagger(rootDir string) (*Dagger, error) {
-	buildpackDir, err := ioutil.TempDir("/tmp", "buildpack")
-	if err != nil {
-		return nil, err
-	}
-
-	if err := os.Chmod(buildpackDir, 0755); err != nil {
-		return nil, err
-	}
-
 	workspaceDir, err := ioutil.TempDir("/tmp", "workspace")
 	if err != nil {
 		return nil, err
@@ -79,15 +70,21 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		rootDir:      rootDir,
 		workspaceDir: workspaceDir,
 		cacheDir:     cacheDir,
-		buildpackDir: buildpackDir,
 		inputsDir:    inputsDir,
 		packDir:      packDir,
 		buildpack:    buildpack,
 	}
 
-	if err := dagg.bundleBuildpack(); err != nil {
+	buildpackDir, err := dagg.bundleBuildpack()
+	if err != nil {
 		return nil, err
 	}
+
+	if err := os.Chmod(buildpackDir, 0755); err != nil {
+		return nil, err
+	}
+
+	dagg.buildpackDir = buildpackDir
 
 	return dagg, nil
 }
@@ -109,32 +106,17 @@ func (d *Dagger) Destroy() {
 	d.packDir = ""
 }
 
-func (d *Dagger) bundleBuildpack() error {
-	if err := CopyFile(filepath.Join(d.rootDir, "buildpack.toml"), filepath.Join(d.buildpackDir, "buildpack.toml")); err != nil {
-		return err
+func (d *Dagger) bundleBuildpack() (string, error) {
+	cmd := exec.Command("package.sh")
+	cmd.Dir = filepath.Join(d.rootDir, "scripts")
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
 	}
-
-	if err := os.Mkdir(filepath.Join(d.buildpackDir, "bin"), os.ModePerm); err != nil {
-		return err
-	}
-
-	for _, b := range []string{"detect", "build"} {
-		cmd := exec.Command(
-			"go",
-			"build",
-			"-o",
-			filepath.Join(d.buildpackDir, "bin", b),
-			filepath.Join(d.rootDir, "cmd", b),
-		)
-		cmd.Env = append(os.Environ(), "GOOS=linux")
-		cmd.Stdout = os.Stderr
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	r := regexp.MustCompile("Buildpack packaged into: (.*)")
+	bpDir := r.FindStringSubmatch(string(out))[1]
+	return bpDir, nil
 }
 
 //Group should be in libbuildpack
