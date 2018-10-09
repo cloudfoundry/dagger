@@ -124,7 +124,7 @@ func (d *Dagger) bundleBuildpack() error {
 			"build",
 			"-o",
 			filepath.Join(d.buildpackDir, "bin", b),
-			filepath.Join(d.rootDir, b, "cmd"),
+			filepath.Join(d.rootDir, "cmd", b),
 		)
 		cmd.Env = append(os.Environ(), "GOOS=linux")
 		cmd.Stdout = os.Stderr
