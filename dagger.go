@@ -22,8 +22,13 @@ const (
 )
 
 type Dagger struct {
-	rootDir, workspaceDir, cacheDir, buildpackDir, inputsDir, packDir string
-	buildpack                                                         libbuildpack.Buildpack
+	rootDir      string
+	workspaceDir string
+	cacheDir     string
+	inputsDir    string
+	packDir      string
+	Buildpack    libbuildpack.Buildpack
+	BuildpackDir string
 }
 
 func NewDagger(rootDir string) (*Dagger, error) {
@@ -71,7 +76,7 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		cacheDir:     cacheDir,
 		inputsDir:    inputsDir,
 		packDir:      packDir,
-		buildpack:    buildpack,
+		Buildpack:    buildpack,
 	}
 
 	buildpackDir, err := dagg.bundleBuildpack()
@@ -83,7 +88,7 @@ func NewDagger(rootDir string) (*Dagger, error) {
 		return nil, err
 	}
 
-	dagg.buildpackDir = buildpackDir
+	dagg.BuildpackDir = buildpackDir
 
 	return dagg, nil
 }
@@ -95,8 +100,8 @@ func (d *Dagger) Destroy() {
 	os.RemoveAll(d.cacheDir)
 	d.cacheDir = ""
 
-	os.RemoveAll(d.buildpackDir)
-	d.buildpackDir = ""
+	os.RemoveAll(d.BuildpackDir)
+	d.BuildpackDir = ""
 
 	os.RemoveAll(d.inputsDir)
 	d.inputsDir = ""
@@ -146,9 +151,9 @@ func (d *Dagger) Detect(appDir string, order Order) (*DetectResult, error) {
 		"-v",
 		fmt.Sprintf("%s:/workspace/app", appDir),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/%s/latest", d.buildpackDir, d.buildpack.Info.ID),
+		fmt.Sprintf("%s:/buildpacks/%s/latest", d.BuildpackDir, d.Buildpack.Info.ID),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/%s/%s", d.buildpackDir, d.buildpack.Info.ID, d.buildpack.Info.Version),
+		fmt.Sprintf("%s:/buildpacks/%s/%s", d.BuildpackDir, d.Buildpack.Info.ID, d.Buildpack.Info.Version),
 		"-v",
 		fmt.Sprintf("%s:/inputs", d.inputsDir),
 		os.Getenv("CNB_BUILD_IMAGE"),
@@ -289,9 +294,9 @@ func (d *Dagger) Build(appDir string, group Group, plan libbuildpack.BuildPlan) 
 		"-v",
 		fmt.Sprintf("%s:/cache", d.cacheDir),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/%s/latest", d.buildpackDir, d.buildpack.Info.ID),
+		fmt.Sprintf("%s:/buildpacks/%s/latest", d.BuildpackDir, d.Buildpack.Info.ID),
 		"-v",
-		fmt.Sprintf("%s:/buildpacks/%s/%s", d.buildpackDir, d.buildpack.Info.ID, d.buildpack.Info.Version),
+		fmt.Sprintf("%s:/buildpacks/%s/%s", d.BuildpackDir, d.Buildpack.Info.ID, d.Buildpack.Info.Version),
 		"-v",
 		fmt.Sprintf("%s:/inputs", d.inputsDir),
 		os.Getenv("CNB_BUILD_IMAGE"),
@@ -310,8 +315,8 @@ func (d *Dagger) Build(appDir string, group Group, plan libbuildpack.BuildPlan) 
 	}
 
 	return &BuildResult{
-		LaunchRootDir: filepath.Join(d.workspaceDir, d.buildpack.Info.ID),
-		CacheRootDir:  filepath.Join(d.cacheDir, d.buildpack.Info.ID),
+		LaunchRootDir: filepath.Join(d.workspaceDir, d.Buildpack.Info.ID),
+		CacheRootDir:  filepath.Join(d.cacheDir, d.Buildpack.Info.ID),
 	}, nil
 }
 
