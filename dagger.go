@@ -3,7 +3,6 @@ package dagger
 import (
 	"bytes"
 	"fmt"
-	"html/template"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -316,36 +315,30 @@ func (d *Dagger) Build(appDir string, group Group, plan libbuildpack.BuildPlan) 
 	}, nil
 }
 
-func (d *Dagger) createBuilderFile(builderFileTemplate string) (string, error) {
-	builderTemplate, err := template.ParseFiles(builderFileTemplate)
-	if err != nil {
-		return "", err
+type BuilderMetadata struct {
+	Buildpacks []struct {
+		ID  string
+		URI string
 	}
+	Groups []Group
+}
 
+func (b BuilderMetadata) writeToFile() (string, error) {
 	builderFile, err := ioutil.TempFile("", "")
 	if err != nil {
 		return "", err
 	}
 
-	bpData := struct {
-		ID      string
-		URI     string
-		Version string
-	}{
-		ID:      d.buildpack.Info.ID,
-		URI:     d.buildpackDir,
-		Version: d.buildpack.Info.Version,
-	}
-	err = builderTemplate.Execute(builderFile, bpData)
+	out, err := ToTomlString(b)
 	if err != nil {
 		return "", err
 	}
 
-	return builderFile.Name(), nil
+	return builderFile.Name(), ioutil.WriteFile(builderFile.Name(), []byte(out), 0777)
 }
 
-func (d *Dagger) Pack(appDir, builderFileTemplate string) (*App, error) {
-	builderFile, err := d.createBuilderFile(builderFileTemplate)
+func (d *Dagger) Pack(appDir string, builderMetadata BuilderMetadata) (*App, error) {
+	builderFile, err := builderMetadata.writeToFile()
 	if err != nil {
 		return nil, err
 	}
