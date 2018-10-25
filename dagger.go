@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -32,6 +33,8 @@ type Dagger struct {
 }
 
 func NewDagger(rootDir string) (*Dagger, error) {
+	rand.Seed(time.Now().Unix())
+
 	workspaceDir, err := ioutil.TempDir("/tmp", "workspace")
 	if err != nil {
 		return nil, err
