@@ -72,19 +72,45 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 		return nil, err
 	}
 
-	return &App{imageName: appImageName}, nil
+	// FIXME: See Github issue https://github.com/buildpack/pack/issues/80
+	cmd = exec.Command("docker", "run", "--user", "root", appImageName, "chmod", "0755", "/workspace/*")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	buf := &bytes.Buffer{}
+	cmd = exec.Command("docker", "ps", "-lq")
+	cmd.Stdout = buf
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	cmd = exec.Command("docker", "commit", strings.TrimSpace(buf.String()), appImageName)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	// End FIXME block
+
+	return &App{imageName: appImageName, fixtureName: appDir}, nil
 }
 
 type App struct {
 	imageName   string
 	containerId string
 	port        string
+	fixtureName string
 }
 
 func (a *App) Start() error {
 	buf := &bytes.Buffer{}
 
-	cmd := exec.Command("docker", "run", "-d", "-P", a.imageName)
+	// FIXME: Once Github issue https://github.com/buildpack/pack/issues/80 is fixed remove: "--entrypoint", "/lifecycle/launcher"
+	cmd := exec.Command("docker", "run", "--entrypoint", "/lifecycle/launcher", "-d", "-P", a.imageName)
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -92,11 +118,23 @@ func (a *App) Start() error {
 	}
 	a.containerId = buf.String()[:12]
 
-	// TODO : implement a timer that checks health and bails out after X tries
-	// but for now lets just sleep :)
-	// cmd = exec.Command("docker", "inspect", "-f", "{{.State.Health.Status}}", a.containerId)
-	fmt.Fprintf(os.Stderr, "Waiting for container to become healthy...")
-	time.Sleep(35 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
+	timeOut := time.After(40 * time.Second)
+docker:
+	for {
+		select {
+		case <-ticker.C:
+			status, err := exec.Command("docker", "inspect", "-f", "{{.State.Health.Status}}", a.containerId).Output()
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(string(status)) == "healthy" {
+				break docker
+			}
+		case <-timeOut:
+			return fmt.Errorf("timed out waiting for app : %s", a.fixtureName)
+		}
+	}
 
 	cmd = exec.Command("docker", "container", "port", a.containerId)
 	cmd.Stdout = buf
