@@ -13,8 +13,53 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/cloudfoundry/libcfbuildpack/helper"
+	"github.com/buildpack/libbuildpack/buildpack"
 )
+
+const (
+	originalImage = "cnb-pack-builder"
+	//builderImage  = "cnb-acceptance-builder"
+)
+
+type Group struct {
+	Buildpacks []buildpack.Info
+}
+
+type Buildpack struct {
+	ID string
+	URI string
+}
+
+type BuilderMetadata struct {
+	Buildpacks []Buildpack
+	Groups []Group
+}
+
+func ToTomlString(v interface{}) (string, error) {
+	var b bytes.Buffer
+
+	if err := toml.NewEncoder(&b).Encode(v); err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
+}
+
+func (b BuilderMetadata) writeToFile() (string, error) {
+	builderFile, err := ioutil.TempFile("/tmp", "builder")
+	if err != nil {
+		return "", err
+	}
+
+	out, err := ToTomlString(b)
+	if err != nil {
+		return "", err
+	}
+
+	return builderFile.Name(), ioutil.WriteFile(builderFile.Name(), []byte(out), 0777)
+}
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -62,9 +107,38 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
 
 	cmd := exec.Command("pack", "build", appImageName, "--no-pull")
-	for _, buildpack := range buildpacks {
-		cmd.Args = append(cmd.Args, "--buildpack", buildpack)
+	for _, bp := range buildpacks {
+		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
+	cmd.Dir = appDir
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	return &App{imageName: appImageName}, nil
+}
+
+//NOTE: there are changes on master to dagger that have not been pulled to this branch
+func Pack(appDir string, builderMetadata BuilderMetadata) (*App, error) {
+	builderFile, err := builderMetadata.writeToFile()
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(builderFile)
+
+	//hardcoded stack, should eventually be changed
+	cmd := exec.Command("pack", "create-builder", originalImage, "-b", builderFile, "-s", "org.cloudfoundry.stacks.cflinuxfs3")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	appImageName := randomString(16)
+
+	cmd = exec.Command("pack", "build", appImageName, "--builder", originalImage, "--no-pull")
 	cmd.Dir = appDir
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
