@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cloudfoundry/libcfbuildpack/helper"
 	"github.com/buildpack/libbuildpack/buildpack"
+	"github.com/cloudfoundry/libcfbuildpack/helper"
 )
 
 const (
@@ -23,18 +23,23 @@ const (
 	//builderImage  = "cnb-acceptance-builder"
 )
 
+const (
+	CFLINUXFS3 = "org.cloudfoundry.stacks.cflinuxfs3"
+	BIONIC     = "io.buildpacks.stacks.bionic"
+)
+
 type Group struct {
 	Buildpacks []buildpack.Info
 }
 
 type Buildpack struct {
-	ID string
+	ID  string
 	URI string
 }
 
 type BuilderMetadata struct {
 	Buildpacks []Buildpack
-	Groups []Group
+	Groups     []Group
 }
 
 func ToTomlString(v interface{}) (string, error) {
@@ -111,8 +116,6 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
 	cmd.Dir = appDir
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
@@ -120,8 +123,7 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	return &App{imageName: appImageName}, nil
 }
 
-//NOTE: there are changes on master to dagger that have not been pulled to this branch
-func Pack(appDir string, builderMetadata BuilderMetadata) (*App, error) {
+func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, error) {
 	builderFile, err := builderMetadata.writeToFile()
 	if err != nil {
 		return nil, err
@@ -129,9 +131,7 @@ func Pack(appDir string, builderMetadata BuilderMetadata) (*App, error) {
 	defer os.Remove(builderFile)
 
 	//hardcoded stack, should eventually be changed
-	cmd := exec.Command("pack", "create-builder", originalImage, "-b", builderFile, "-s", "org.cloudfoundry.stacks.cflinuxfs3")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	cmd := exec.Command("pack", "create-builder", originalImage, "-b", builderFile, "-s", stack)
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
@@ -140,35 +140,9 @@ func Pack(appDir string, builderMetadata BuilderMetadata) (*App, error) {
 
 	cmd = exec.Command("pack", "build", appImageName, "--builder", originalImage, "--no-pull")
 	cmd.Dir = appDir
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
-
-	// FIXME: See Github issue https://github.com/buildpack/pack/issues/80
-	cmd = exec.Command("docker", "run", "--user", "root", appImageName, "chmod", "0755", "/workspace/*")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	buf := &bytes.Buffer{}
-	cmd = exec.Command("docker", "ps", "-lq")
-	cmd.Stdout = buf
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	cmd = exec.Command("docker", "commit", strings.TrimSpace(buf.String()), appImageName)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-	// End FIXME block
 
 	return &App{imageName: appImageName, fixtureName: appDir}, nil
 }
@@ -178,13 +152,42 @@ type App struct {
 	containerId string
 	port        string
 	fixtureName string
+	healthCheck HealthCheck
+}
+
+type HealthCheck struct {
+	command  string
+	interval string
+	timeout  string
+}
+
+func (a *App) SetHealthCheck(command, interval, timeout string) {
+	a.healthCheck = HealthCheck{
+		command:  command,
+		interval: interval,
+		timeout:  timeout,
+	}
 }
 
 func (a *App) Start() error {
 	buf := &bytes.Buffer{}
 
-	// FIXME: Once Github issue https://github.com/buildpack/pack/issues/80 is fixed remove: "--entrypoint", "/lifecycle/launcher"
-	cmd := exec.Command("docker", "run", "--entrypoint", "/lifecycle/launcher", "-d", "-P", a.imageName)
+	args := []string{"run", "-d", "-P"}
+	if a.healthCheck.command != "" {
+		args = append(args, "--health-cmd", a.healthCheck.command)
+	}
+
+	if a.healthCheck.interval != "" {
+		args = append(args, "--health-interval", a.healthCheck.interval)
+	}
+
+	if a.healthCheck.timeout != "" {
+		args = append(args, "--health-timeout", a.healthCheck.timeout)
+	}
+
+	args = append(args, a.imageName)
+
+	cmd := exec.Command("docker", args...)
 	cmd.Stdout = buf
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
@@ -202,6 +205,11 @@ docker:
 			if err != nil {
 				return err
 			}
+
+			if strings.TrimSpace(string(status)) == "unhealthy" {
+				return fmt.Errorf("app failed to start : %s", a.fixtureName)
+			}
+
 			if strings.TrimSpace(string(status)) == "healthy" {
 				break docker
 			}
@@ -227,8 +235,11 @@ func (a *App) Destroy() error {
 	}
 
 	cmd := exec.Command("docker", "stop", a.containerId)
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("docker", "rm", a.containerId, "-f", "--volumes")
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -241,8 +252,11 @@ func (a *App) Destroy() error {
 	}
 
 	cmd = exec.Command("docker", "rmi", a.imageName, "-f")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	cmd = exec.Command("docker", "image", "prune", "-f")
 	if err := cmd.Run(); err != nil {
 		return err
 	}
@@ -250,6 +264,42 @@ func (a *App) Destroy() error {
 	a.imageName = ""
 
 	return nil
+}
+
+func (a *App) ContainerInfo() (cID string, imageID string, cacheID []string, e error) {
+	volumes, err := GetCacheVolumes()
+	if err != nil {
+		return "", "", []string{}, err
+	}
+
+	return a.containerId, a.imageName, volumes, nil
+}
+
+func (a *App) ContainerLogs() (string, error) {
+	cmd := exec.Command("docker", "logs", a.containerId)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+
+	return string(output), nil
+}
+
+func GetCacheVolumes() ([]string, error) {
+	cmd := exec.Command("docker", "volume", "ls", "-q")
+	output, err := cmd.Output()
+	if err != nil {
+		return []string{}, err
+	}
+
+	outputArr := strings.Split(string(output), "\n")
+	var finalVolumes []string
+	for _, line := range outputArr {
+		if strings.Contains(line, "pack-cache") {
+			finalVolumes = append(finalVolumes, line)
+		}
+	}
+	return outputArr, nil
 }
 
 func (a *App) HTTPGet(path string) error {
