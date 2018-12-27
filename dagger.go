@@ -20,7 +20,7 @@ import (
 
 const (
 	originalImage = "cnb-pack-builder"
-	//builderImage  = "cnb-acceptance-builder"
+	builderImage  = "cnb-acceptance-builder"
 )
 
 const (
@@ -137,9 +137,30 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
 	}
 
+	// FIX: this is necessary because permissions on `/buildpacks` are rwx for root user only ( but only happens in CI )
+	cmd = exec.Command("docker", "run", "--user", "root", originalImage, "chmod", "0755", "/buildpacks")
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	buf := &bytes.Buffer{}
+	cmd = exec.Command("docker", "ps", "-lq")
+	cmd.Stdout = buf
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	cmd = exec.Command("docker", "commit", strings.TrimSpace(buf.String()), builderImage)
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+
+	fmt.Println("End of docker commit, should have a new build image")
+	// END FIX
+
 	appImageName := randomString(16)
 
-	cmd = exec.Command("pack", "build", appImageName, "--builder", originalImage, "--no-pull")
+	cmd = exec.Command("pack", "build", appImageName, "--builder", builderImage, "--no-pull")
 	cmd.Dir = appDir
 	output, err = cmd.CombinedOutput()
 	if err != nil {
