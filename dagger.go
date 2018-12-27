@@ -155,7 +155,6 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 		return nil, err
 	}
 
-	fmt.Println("End of docker commit, should have a new build image")
 	// END FIX
 
 	appImageName := randomString(16)
