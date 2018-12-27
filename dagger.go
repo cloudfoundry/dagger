@@ -132,16 +132,18 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 
 	//hardcoded stack, should eventually be changed
 	cmd := exec.Command("pack", "create-builder", originalImage, "-b", builderFile, "-s", stack)
-	if err := cmd.Run(); err != nil {
-		return nil, err
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
 	}
 
 	appImageName := randomString(16)
 
 	cmd = exec.Command("pack", "build", appImageName, "--builder", originalImage, "--no-pull")
 	cmd.Dir = appDir
-	if err := cmd.Run(); err != nil {
-		return nil, err
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
 	}
 
 	return &App{imageName: appImageName, fixtureName: appDir}, nil
