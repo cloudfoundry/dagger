@@ -337,6 +337,24 @@ func (a *App) HTTPGet(path string) error {
 	return nil
 }
 
+func (a *App) HTTPGetSucceeds(path string) (response []byte, err error) {
+	resp, err := http.Get("http://localhost:" + a.port + path)
+	if err != nil {
+		return response, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return response, fmt.Errorf("received bad response from application")
+	}
+
+	response, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return response, err
+	}
+
+	return response, nil
+}
+
 func randomString(n int) string {
 	letterRunes := []rune("abcdefghijklmnopqrstuvwxyz")
 	b := make([]rune, n)
