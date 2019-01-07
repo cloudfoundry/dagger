@@ -166,7 +166,7 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
 	}
 
-	return &App{imageName: appImageName, fixtureName: appDir}, nil
+	return &App{imageName: appImageName, fixtureName: appDir, Env: make(map[string]string)}, nil
 }
 
 type App struct {
@@ -175,6 +175,7 @@ type App struct {
 	port        string
 	fixtureName string
 	healthCheck HealthCheck
+	Env         map[string]string
 }
 
 type HealthCheck struct {
@@ -205,6 +206,12 @@ func (a *App) Start() error {
 
 	if a.healthCheck.timeout != "" {
 		args = append(args, "--health-timeout", a.healthCheck.timeout)
+	}
+
+	envTemplate := "%s=%s"
+	for k, v := range a.Env {
+		envString := fmt.Sprintf(envTemplate, k, v)
+		args = append(args, "-e", envString)
 	}
 
 	args = append(args, a.imageName)
