@@ -111,7 +111,7 @@ func GetRemoteBuildpack(url string) (string, error) {
 func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
 
-	cmd := exec.Command("pack", "build", appImageName, "--no-pull")
+	cmd := exec.Command("pack", "build", appImageName, "--no-pull", "--clear-cache")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
@@ -161,7 +161,7 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 
 	appImageName := randomString(16)
 
-	cmd = exec.Command("pack", "build", appImageName, "--builder", builderImage, "--no-pull")
+	cmd = exec.Command("pack", "build", appImageName, "--builder", builderImage, "--no-pull", "--clear-cache")
 	cmd.Dir = appDir
 	output, err = cmd.CombinedOutput()
 	if err != nil {
