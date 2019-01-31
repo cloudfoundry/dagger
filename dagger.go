@@ -161,11 +161,14 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 
 	appImageName := randomString(16)
 
-	cmd = exec.Command("pack", "build", appImageName, "--builder", builderImage, "--no-pull", "--clear-cache")
+	args := []string{"build", appImageName, "--builder", builderImage, "--no-pull", "--clear-cache"}
+	cmd = exec.Command("pack", args...)
 	cmd.Dir = appDir
-	output, err = cmd.CombinedOutput()
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
 	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
+		return nil, fmt.Errorf(fmt.Sprintf("Error occurred %s", err))
 	}
 
 	return &App{imageName: appImageName, fixtureName: appDir, Env: make(map[string]string)}, nil
