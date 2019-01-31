@@ -160,21 +160,32 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 	// END FIX
 
 	appImageName := randomString(16)
+	buildStdout := &bytes.Buffer{}
+	buildStderr := &bytes.Buffer{}
 
 	args := []string{"build", appImageName, "--builder", builderImage, "--no-pull", "--clear-cache"}
 	cmd = exec.Command("pack", args...)
 	cmd.Dir = appDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stdout = io.MultiWriter(os.Stdout, buildStdout)
+	cmd.Stderr = io.MultiWriter(os.Stderr, buildStderr)
 	err = cmd.Run()
 	if err != nil {
 		return nil, fmt.Errorf(fmt.Sprintf("Error occurred %s", err))
 	}
 
-	return &App{imageName: appImageName, fixtureName: appDir, Env: make(map[string]string)}, nil
+	app := &App{
+		BuildStderr: buildStderr,
+		BuildStdout: buildStdout,
+		imageName:   appImageName,
+		fixtureName: appDir,
+		Env:         make(map[string]string),
+	}
+	return app, nil
 }
 
 type App struct {
+	BuildStdout *bytes.Buffer
+	BuildStderr *bytes.Buffer
 	imageName   string
 	containerId string
 	port        string
@@ -347,6 +358,24 @@ func (a *App) HTTPGet(path string) error {
 	}
 
 	return nil
+}
+
+func (a *App) HTTPGetAll(path string) (string, map[string][]string, error) {
+	resp, err := http.Get("http://localhost:" + a.port + path)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", nil, fmt.Errorf("received bad response from application")
+	}
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", nil, err
+	}
+
+	return string(body), resp.Header, nil
 }
 
 func (a *App) HTTPGetSucceeds(path string) (response []byte, err error) {
