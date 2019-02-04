@@ -118,8 +118,6 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	app := &App{
 		BuildStderr: buildStderr,
 		BuildStdout: buildStdout,
-		Stdout:      &bytes.Buffer{},
-		Stderr:      &bytes.Buffer{},
 		Env:         make(map[string]string),
 		imageName:   appImageName,
 		fixtureName: appDir,
@@ -130,8 +128,6 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 type App struct {
 	BuildStdout *bytes.Buffer
 	BuildStderr *bytes.Buffer
-	Stdout      *bytes.Buffer
-	Stderr      *bytes.Buffer
 	Env         map[string]string
 	logProc     *exec.Cmd
 	imageName   string
@@ -218,10 +214,7 @@ docker:
 	}
 	a.port = strings.TrimSpace(strings.Split(buf.String(), ":")[1])
 
-	a.logProc = exec.Command("docker", "logs", "-f", a.containerId)
-	a.logProc.Stdout = a.Stdout
-	a.logProc.Stderr = a.Stderr
-	return a.logProc.Start()
+	return nil
 }
 
 func (a *App) Destroy() error {
