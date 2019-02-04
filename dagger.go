@@ -2,6 +2,7 @@ package dagger
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,16 +12,10 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
-	"github.com/buildpack/libbuildpack/buildpack"
 	"github.com/cloudfoundry/libcfbuildpack/helper"
-)
-
-const (
-	originalImage = "cnb-pack-builder"
-	builderImage  = "cnb-acceptance-builder"
 )
 
 const (
@@ -28,46 +23,11 @@ const (
 	BIONIC     = "io.buildpacks.stacks.bionic"
 )
 
-type Group struct {
-	Buildpacks []buildpack.Info
-}
-
-type Buildpack struct {
-	ID  string
-	URI string
-}
-
-type BuilderMetadata struct {
-	Buildpacks []Buildpack
-	Groups     []Group
-}
-
-func ToTomlString(v interface{}) (string, error) {
-	var b bytes.Buffer
-
-	if err := toml.NewEncoder(&b).Encode(v); err != nil {
-		return "", err
-	}
-
-	return b.String(), nil
-}
-
-func (b BuilderMetadata) writeToFile() (string, error) {
-	builderFile, err := ioutil.TempFile("/tmp", "builder")
-	if err != nil {
-		return "", err
-	}
-
-	out, err := ToTomlString(b)
-	if err != nil {
-		return "", err
-	}
-
-	return builderFile.Name(), ioutil.WriteFile(builderFile.Name(), []byte(out), 0777)
-}
+var downloadCache sync.Map
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
+	downloadCache = sync.Map{}
 }
 
 func PackageBuildpack() (string, error) {
@@ -82,20 +42,51 @@ func PackageBuildpack() (string, error) {
 	return bpDir, nil
 }
 
-func GetRemoteBuildpack(url string) (string, error) {
-	resp, err := http.Get(url)
+func GetLatestBuildpack(name string) (string, error) {
+	resp, err := http.Get(fmt.Sprintf("https://api.github.com/repos/cloudfoundry/%s/releases/latest", name))
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 
-	download, err := ioutil.TempFile("", "")
+	release := struct {
+		TagName string `json:"tag_name"`
+		Assets  []struct {
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}{}
+
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", err
+	}
+
+	if len(release.Assets) == 0 {
+		return "", fmt.Errorf("there are no releases for %s", name)
+	}
+
+	contents, found := downloadCache.Load(name + release.TagName)
+	if !found {
+		buildpackResp, err := http.Get(release.Assets[0].BrowserDownloadURL)
+		if err != nil {
+			return "", err
+		}
+		defer buildpackResp.Body.Close()
+
+		contents, err = ioutil.ReadAll(buildpackResp.Body)
+		if err != nil {
+			return "", err
+		}
+
+		downloadCache.Store(name+release.TagName, contents)
+	}
+
+	downloadFile, err := ioutil.TempFile("", "")
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(download.Name())
+	defer os.Remove(downloadFile.Name())
 
-	_, err = io.Copy(download, resp.Body)
+	_, err = io.Copy(downloadFile, bytes.NewReader(contents.([]byte)))
 	if err != nil {
 		return "", err
 	}
@@ -105,80 +96,33 @@ func GetRemoteBuildpack(url string) (string, error) {
 		return "", err
 	}
 
-	return dest, helper.ExtractTarGz(download.Name(), dest, 0)
+	return dest, helper.ExtractTarGz(downloadFile.Name(), dest, 0)
 }
 
 func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
+	buildStdout := &bytes.Buffer{}
+	buildStderr := &bytes.Buffer{}
 
-	cmd := exec.Command("pack", "build", appImageName, "--no-pull", "--clear-cache")
+	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder", "--clear-cache")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
 	cmd.Dir = appDir
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	return &App{imageName: appImageName}, nil
-}
-
-func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, error) {
-	builderFile, err := builderMetadata.writeToFile()
-	if err != nil {
-		return nil, err
-	}
-	defer os.Remove(builderFile)
-
-	//hardcoded stack, should eventually be changed
-	cmd := exec.Command("pack", "create-builder", originalImage, "-b", builderFile, "-s", stack)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("Std out + error, %s: ", string(output)), err)
-	}
-
-	// FIX: this is necessary because permissions on `/buildpacks` are rwx for root user only ( but only happens in CI )
-	cmd = exec.Command("docker", "run", "--user", "root", originalImage, "chmod", "0755", "/buildpacks")
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	buf := &bytes.Buffer{}
-	cmd = exec.Command("docker", "ps", "-lq")
-	cmd.Stdout = buf
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	cmd = exec.Command("docker", "commit", strings.TrimSpace(buf.String()), builderImage)
-	if err := cmd.Run(); err != nil {
-		return nil, err
-	}
-
-	// END FIX
-
-	appImageName := randomString(16)
-	buildStdout := &bytes.Buffer{}
-	buildStderr := &bytes.Buffer{}
-
-	args := []string{"build", appImageName, "--builder", builderImage, "--no-pull", "--clear-cache"}
-	cmd = exec.Command("pack", args...)
-	cmd.Dir = appDir
 	cmd.Stdout = io.MultiWriter(os.Stdout, buildStdout)
 	cmd.Stderr = io.MultiWriter(os.Stderr, buildStderr)
-	err = cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf(fmt.Sprintf("Error occurred %s", err))
+	if err := cmd.Run(); err != nil {
+		return nil, err
 	}
 
 	app := &App{
 		BuildStderr: buildStderr,
 		BuildStdout: buildStdout,
+		Stdout:      &bytes.Buffer{},
+		Stderr:      &bytes.Buffer{},
+		Env:         make(map[string]string),
 		imageName:   appImageName,
 		fixtureName: appDir,
-		Env:         make(map[string]string),
 	}
 	return app, nil
 }
@@ -186,12 +130,15 @@ func Pack(appDir string, builderMetadata BuilderMetadata, stack string) (*App, e
 type App struct {
 	BuildStdout *bytes.Buffer
 	BuildStderr *bytes.Buffer
+	Stdout      *bytes.Buffer
+	Stderr      *bytes.Buffer
+	Env         map[string]string
+	logProc     *exec.Cmd
 	imageName   string
 	containerId string
 	port        string
 	fixtureName string
 	healthCheck HealthCheck
-	Env         map[string]string
 }
 
 type HealthCheck struct {
@@ -271,7 +218,10 @@ docker:
 	}
 	a.port = strings.TrimSpace(strings.Split(buf.String(), ":")[1])
 
-	return nil
+	a.logProc = exec.Command("docker", "logs", "-f", a.containerId)
+	a.logProc.Stdout = a.Stdout
+	a.logProc.Stderr = a.Stderr
+	return a.logProc.Start()
 }
 
 func (a *App) Destroy() error {
@@ -311,8 +261,8 @@ func (a *App) Destroy() error {
 	return nil
 }
 
-func (a *App) ContainerInfo() (cID string, imageID string, cacheID []string, e error) {
-	volumes, err := GetCacheVolumes()
+func (a *App) Info() (cID string, imageID string, cacheID []string, e error) {
+	volumes, err := getCacheVolumes()
 	if err != nil {
 		return "", "", []string{}, err
 	}
@@ -320,7 +270,7 @@ func (a *App) ContainerInfo() (cID string, imageID string, cacheID []string, e e
 	return a.containerId, a.imageName, volumes, nil
 }
 
-func (a *App) ContainerLogs() (string, error) {
+func (a *App) Logs() (string, error) {
 	cmd := exec.Command("docker", "logs", a.containerId)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -330,37 +280,7 @@ func (a *App) ContainerLogs() (string, error) {
 	return string(output), nil
 }
 
-func GetCacheVolumes() ([]string, error) {
-	cmd := exec.Command("docker", "volume", "ls", "-q")
-	output, err := cmd.Output()
-	if err != nil {
-		return []string{}, err
-	}
-
-	outputArr := strings.Split(string(output), "\n")
-	var finalVolumes []string
-	for _, line := range outputArr {
-		if strings.Contains(line, "pack-cache") {
-			finalVolumes = append(finalVolumes, line)
-		}
-	}
-	return outputArr, nil
-}
-
-func (a *App) HTTPGet(path string) error {
-	resp, err := http.Get("http://localhost:" + a.port + path)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("received bad response from application")
-	}
-
-	return nil
-}
-
-func (a *App) HTTPGetAll(path string) (string, map[string][]string, error) {
+func (a *App) HTTPGet(path string) (string, map[string][]string, error) {
 	resp, err := http.Get("http://localhost:" + a.port + path)
 	if err != nil {
 		return "", nil, err
@@ -378,22 +298,21 @@ func (a *App) HTTPGetAll(path string) (string, map[string][]string, error) {
 	return string(body), resp.Header, nil
 }
 
-func (a *App) HTTPGetSucceeds(path string) (response []byte, err error) {
-	resp, err := http.Get("http://localhost:" + a.port + path)
+func getCacheVolumes() ([]string, error) {
+	cmd := exec.Command("docker", "volume", "ls", "-q")
+	output, err := cmd.Output()
 	if err != nil {
-		return response, err
+		return []string{}, err
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return response, fmt.Errorf("received bad response from application")
+	outputArr := strings.Split(string(output), "\n")
+	var finalVolumes []string
+	for _, line := range outputArr {
+		if strings.Contains(line, "pack-cache") {
+			finalVolumes = append(finalVolumes, line)
+		}
 	}
-
-	response, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return response, err
-	}
-
-	return response, nil
+	return outputArr, nil
 }
 
 func randomString(n int) string {
