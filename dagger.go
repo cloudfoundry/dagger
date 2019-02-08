@@ -42,6 +42,20 @@ func PackageBuildpack() (string, error) {
 	return bpDir, nil
 }
 
+
+func PackageBuildpackFrom(path string) (string, error) {
+	cmd := exec.Command("./package.sh")
+	cmd.Dir = path
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	r := regexp.MustCompile("Buildpack packaged into: (.*)")
+	bpDir := r.FindStringSubmatch(string(out))[1]
+	return bpDir, nil
+}
+
 func GetLatestBuildpack(name string) (string, error) {
 	resp, err := http.Get(fmt.Sprintf("https://api.github.com/repos/cloudfoundry/%s/releases/latest", name))
 	if err != nil {
@@ -254,6 +268,16 @@ func (a *App) Destroy() error {
 	return nil
 }
 
+
+func (a *App) Files(path string) ([]string, error) {
+	cmd := exec.Command("docker", "run", a.imageName, "find", "./..", "-wholename", fmt.Sprintf("*%s*", path))
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return []string{}, err
+	}
+	return strings.Split(string(output), "\n"), nil
+}
+
 func (a *App) Info() (cID string, imageID string, cacheID []string, e error) {
 	volumes, err := getCacheVolumes()
 	if err != nil {
@@ -307,6 +331,8 @@ func getCacheVolumes() ([]string, error) {
 	}
 	return outputArr, nil
 }
+
+
 
 func randomString(n int) string {
 	letterRunes := []rune("abcdefghijklmnopqrstuvwxyz")
