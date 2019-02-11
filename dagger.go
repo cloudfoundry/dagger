@@ -315,6 +315,11 @@ func (a *App) HTTPGet(path string) (string, map[string][]string, error) {
 	return string(body), resp.Header, nil
 }
 
+func (a *App) HTTPGetBody(path string) (string, error) {
+	resp, _, err := a.HTTPGet(path)
+	return resp, err
+}
+
 func getCacheVolumes() ([]string, error) {
 	cmd := exec.Command("docker", "volume", "ls", "-q")
 	output, err := cmd.Output()
