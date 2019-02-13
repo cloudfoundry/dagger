@@ -31,7 +31,8 @@ func init() {
 }
 
 func PackageBuildpack() (string, error) {
-	cmd := exec.Command("../scripts/package.sh")
+	cmd := exec.Command("./scripts/package.sh")
+	cmd.Dir = "../"
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
