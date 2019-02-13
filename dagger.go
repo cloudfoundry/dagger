@@ -42,20 +42,6 @@ func PackageBuildpack() (string, error) {
 	return bpDir, nil
 }
 
-
-func PackageBuildpackFrom(path string) (string, error) {
-	cmd := exec.Command("./package.sh")
-	cmd.Dir = path
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	r := regexp.MustCompile("Buildpack packaged into: (.*)")
-	bpDir := r.FindStringSubmatch(string(out))[1]
-	return bpDir, nil
-}
-
 func GetLatestBuildpack(name string) (string, error) {
 	resp, err := http.Get(fmt.Sprintf("https://api.github.com/repos/cloudfoundry/%s/releases/latest", name))
 	if err != nil {
@@ -115,23 +101,21 @@ func GetLatestBuildpack(name string) (string, error) {
 
 func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
-	buildStdout := &bytes.Buffer{}
-	buildStderr := &bytes.Buffer{}
+	buildLogs := &bytes.Buffer{}
 
 	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder", "--clear-cache")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
 	cmd.Dir = appDir
-	cmd.Stdout = io.MultiWriter(os.Stdout, buildStdout)
-	cmd.Stderr = io.MultiWriter(os.Stderr, buildStderr)
+	cmd.Stdout = io.MultiWriter(os.Stdout, buildLogs)
+	cmd.Stderr = io.MultiWriter(os.Stderr, buildLogs)
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
 
 	app := &App{
-		BuildStderr: buildStderr,
-		BuildStdout: buildStdout,
+		buildLogs:   buildLogs,
 		Env:         make(map[string]string),
 		imageName:   appImageName,
 		fixtureName: appDir,
@@ -140,8 +124,7 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 }
 
 type App struct {
-	BuildStdout *bytes.Buffer
-	BuildStderr *bytes.Buffer
+	buildLogs   *bytes.Buffer
 	Env         map[string]string
 	logProc     *exec.Cmd
 	imageName   string
@@ -155,6 +138,10 @@ type HealthCheck struct {
 	command  string
 	interval string
 	timeout  string
+}
+
+func (a *App) BuildLogs() string {
+	return stripColor(a.buildLogs.String())
 }
 
 func (a *App) SetHealthCheck(command, interval, timeout string) {
@@ -268,7 +255,6 @@ func (a *App) Destroy() error {
 	return nil
 }
 
-
 func (a *App) Files(path string) ([]string, error) {
 	cmd := exec.Command("docker", "run", a.imageName, "find", "./..", "-wholename", fmt.Sprintf("*%s*", path))
 	output, err := cmd.CombinedOutput()
@@ -294,7 +280,7 @@ func (a *App) Logs() (string, error) {
 		return "", err
 	}
 
-	return string(output), nil
+	return stripColor(string(output)), nil
 }
 
 func (a *App) HTTPGet(path string) (string, map[string][]string, error) {
@@ -320,6 +306,13 @@ func (a *App) HTTPGetBody(path string) (string, error) {
 	return resp, err
 }
 
+func stripColor(input string) string {
+	const ansi = "[\u001B\u009B][[\\]()#;?]*(?:(?:(?:[a-zA-Z\\d]*(?:;[a-zA-Z\\d]*)*)?\u0007)|(?:(?:\\d{1,4}(?:;\\d{0,4})*)?[\\dA-PRZcf-ntqry=><~]))"
+
+	var re = regexp.MustCompile(ansi)
+	return re.ReplaceAllString(input, "")
+}
+
 func getCacheVolumes() ([]string, error) {
 	cmd := exec.Command("docker", "volume", "ls", "-q")
 	output, err := cmd.Output()
@@ -336,8 +329,6 @@ func getCacheVolumes() ([]string, error) {
 	}
 	return outputArr, nil
 }
-
-
 
 func randomString(n int) string {
 	letterRunes := []rune("abcdefghijklmnopqrstuvwxyz")
