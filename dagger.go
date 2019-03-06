@@ -131,7 +131,7 @@ func BuildCFLinuxFS3() error {
 	cmd := exec.Command("pack", "stacks", "--no-color")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return errors.Wrap(err, "could not get stack list")
+		return errors.Wrapf(err, "could not get stack list %s", out)
 	}
 
 	contains, err := regexp.Match(CFLINUXFS3, out)
@@ -152,6 +152,7 @@ func BuildCFLinuxFS3() error {
 }
 
 type App struct {
+	Memory      string
 	buildLogs   *bytes.Buffer
 	Env         map[string]string
 	logProc     *exec.Cmd
@@ -184,6 +185,10 @@ func (a *App) Start() error {
 	buf := &bytes.Buffer{}
 
 	args := []string{"run", "-d", "-P"}
+	if a.Memory != "" {
+		args = append(args, "--memory", a.Memory)
+	}
+
 	if a.healthCheck.command != "" {
 		args = append(args, "--health-cmd", a.healthCheck.command)
 	}
