@@ -103,11 +103,12 @@ func GetLatestBuildpack(name string) (string, error) {
 	return dest, helper.ExtractTarGz(downloadFile.Name(), dest, 0)
 }
 
+// This returns the build logs as part of the error case
 func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
 	buildLogs := &bytes.Buffer{}
 
-	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder", "--clear-cache")
+	cmd := exec.Command("pack", "build", appImageName, "--builder", "cloudfoundry/cnb", "--clear-cache")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
@@ -115,7 +116,7 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	cmd.Stdout = io.MultiWriter(os.Stdout, buildLogs)
 	cmd.Stderr = io.MultiWriter(os.Stderr, buildLogs)
 	if err := cmd.Run(); err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, buildLogs.String())
 	}
 
 	app := &App{
