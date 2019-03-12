@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -44,6 +45,30 @@ func PackageBuildpack() (string, error) {
 	r := regexp.MustCompile("Buildpack packaged into: (.*)")
 	bpDir := r.FindStringSubmatch(string(out))[1]
 	return bpDir, nil
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyz")
+
+func RandStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
+
+func TempBuildpackPath(name string) (string) {
+	return filepath.Join("/tmp", name + "-" + RandStringRunes(16))
+}
+
+func PackageCachedBuildpack(bpPath string) (string, string, error) {
+	tarFile := TempBuildpackPath(filepath.Base(bpPath))// + ".tgz"
+	cmd := exec.Command("./.bin/packager", tarFile)
+	cmd.Dir = bpPath
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+
+	return tarFile, string(out), err
 }
 
 func GetLatestBuildpack(name string) (string, error) {
@@ -262,6 +287,7 @@ func (a *App) Destroy() error {
 		return err
 	}
 
+
 	cmd = exec.Command("docker", "rm", a.containerId, "-f", "--volumes")
 	if err := cmd.Run(); err != nil {
 		return err
@@ -278,14 +304,12 @@ func (a *App) Destroy() error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-
 	cmd = exec.Command("docker", "image", "prune", "-f")
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
 	a.imageName = ""
-
 	return nil
 }
 
