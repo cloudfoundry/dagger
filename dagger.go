@@ -133,7 +133,7 @@ func PackBuild(appDir string, buildpacks ...string) (*App, error) {
 	appImageName := randomString(16)
 	buildLogs := &bytes.Buffer{}
 
-	cmd := exec.Command("pack", "build", appImageName, "--builder", "cloudfoundry/cnb", "--clear-cache")
+	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder", "--clear-cache")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
