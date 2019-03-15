@@ -57,18 +57,31 @@ func RandStringRunes(n int) string {
 	return string(b)
 }
 
-func TempBuildpackPath(name string) (string) {
-	return filepath.Join("/tmp", name + "-" + RandStringRunes(16))
+func TempBuildpackPath(name string) string {
+	return filepath.Join("/tmp", name+"-"+RandStringRunes(16))
 }
 
 func PackageCachedBuildpack(bpPath string) (string, string, error) {
-	tarFile := TempBuildpackPath(filepath.Base(bpPath))// + ".tgz"
+	tarFile := TempBuildpackPath(filepath.Base(bpPath)) // + ".tgz"
 	cmd := exec.Command("./.bin/packager", tarFile)
 	cmd.Dir = bpPath
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 
 	return tarFile, string(out), err
+}
+
+func PackageLocalBuildpack(name string) (string, error) {
+	cmd := exec.Command("./scripts/package.sh")
+	cmd.Dir = fmt.Sprintf("../../%s", name)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	r := regexp.MustCompile("Buildpack packaged into: (.*)")
+	bpDir := r.FindStringSubmatch(string(out))[1]
+	return bpDir, nil
 }
 
 func GetLatestBuildpack(name string) (string, error) {
