@@ -143,10 +143,14 @@ func GetLatestBuildpack(name string) (string, error) {
 
 // This returns the build logs as part of the error case
 func PackBuild(appDir string, buildpacks ...string) (*App, error) {
-	appImageName := randomString(16)
+	return PackBuildNamedImage(randomString(16), appDir, buildpacks...)
+}
+
+// This pack builds an app from appDir into appImageName, to allow specifying an image name in a test
+func PackBuildNamedImage(appImageName, appDir string, buildpacks ...string) (*App, error) {
 	buildLogs := &bytes.Buffer{}
 
-	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder", "--clear-cache")
+	cmd := exec.Command("pack", "build", appImageName, "--builder", "cfbuildpacks/cflinuxfs3-cnb-test-builder")
 	for _, bp := range buildpacks {
 		cmd.Args = append(cmd.Args, "--buildpack", bp)
 	}
@@ -299,7 +303,6 @@ func (a *App) Destroy() error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-
 
 	cmd = exec.Command("docker", "rm", a.containerId, "-f", "--volumes")
 	if err := cmd.Run(); err != nil {
