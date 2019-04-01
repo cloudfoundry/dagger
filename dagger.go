@@ -91,6 +91,10 @@ func GetLatestBuildpack(name string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.Errorf("Erroring getting buildpack releases: status %d", resp.StatusCode)
+	}
+
 	release := struct {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
@@ -343,6 +347,8 @@ func (a *App) HTTPGet(path string) (string, map[string][]string, error) {
 	if err != nil {
 		return "", nil, err
 	}
+
+	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", nil, fmt.Errorf("received bad response from application")
