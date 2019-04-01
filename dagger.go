@@ -112,11 +112,16 @@ func GetLatestBuildpack(name string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+
 		defer buildpackResp.Body.Close()
 
 		contents, err = ioutil.ReadAll(buildpackResp.Body)
 		if err != nil {
 			return "", err
+		}
+
+		if buildpackResp.StatusCode != http.StatusOK {
+			return "", errors.Errorf("Erroring Getting buildpack : status %d : %s", buildpackResp.StatusCode, contents)
 		}
 
 		downloadCache.Store(name+release.TagName, contents)
