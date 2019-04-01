@@ -71,9 +71,9 @@ func PackageCachedBuildpack(bpPath string) (string, string, error) {
 	return tarFile, string(out), err
 }
 
-func PackageLocalBuildpack(name string) (string, error) {
+func PackageLocalBuildpack(name, path string) (string, error) {
 	cmd := exec.Command("./scripts/package.sh")
-	cmd.Dir = fmt.Sprintf("../../%s", name)
+	cmd.Dir = path
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
