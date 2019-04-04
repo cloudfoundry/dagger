@@ -105,6 +105,12 @@ func PackageLocalBuildpack(name, path string) (string, error) {
 	return bpDir, nil
 }
 
+func GetLatestBuildpackFromMaster(name string) (string, error) {
+	cmd := exec.Command(fmt.Sprintf("git clone https://github.com/cloudfoundry/%s", name))
+	cmd.Dir = "/tmp/tmp-cnbs"
+	return PackageLocalBuildpack(name, fmt.Sprintf("/tmp/tmp-cnbs/%s"))
+}
+
 func GetLatestBuildpack(name string) (string, error) {
 	uri := fmt.Sprintf("https://api.github.com/repos/cloudfoundry/%s/releases/latest", name)
 	ctx := context.Background()
