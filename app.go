@@ -49,9 +49,10 @@ func (a *App) StartWithCommand(startCmd string) error {
 		args = append(args, "--memory", a.Memory)
 	}
 
-	if a.healthCheck.command != "" {
-		args = append(args, "--health-cmd", a.healthCheck.command)
+	if a.healthCheck.command == "" {
+		a.healthCheck.command = fmt.Sprintf("curl --fail http://localhost:%s || exit 1", a.Env["PORT"])
 	}
+	args = append(args, "--health-cmd", a.healthCheck.command)
 
 	if a.healthCheck.interval != "" {
 		args = append(args, "--health-interval", a.healthCheck.interval)
