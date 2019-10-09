@@ -26,7 +26,7 @@ func TestUnitCloudNative(t *testing.T) {
 
 		existingPath = os.Getenv("PATH")
 
-		fakeDockerCLI, err = gexec.Build("github.com/cloudfoundry/libbuildpack/cutlass/docker/fakes/docker")
+		fakeDockerCLI, err = gexec.Build("github.com/cloudfoundry/dagger/fakes/docker")
 		Expect(err).NotTo(HaveOccurred())
 
 		fakePackCLI, err = gexec.Build("github.com/cloudfoundry/dagger/fakes/pack")
@@ -45,7 +45,6 @@ func TestUnitCloudNative(t *testing.T) {
 	})
 
 	suite("Pack", testPack)
-	suite("Executable", testExecutable)
 
 	suite.Run(t)
 }
