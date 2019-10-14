@@ -1,23 +1,24 @@
 package dagger_test
 
 import (
-	"github.com/cloudfoundry/dagger"
-	"github.com/sclevine/spec"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cloudfoundry/dagger"
+	"github.com/sclevine/spec"
 
 	. "github.com/onsi/gomega"
 )
 
 func testPack(t *testing.T, when spec.G, it spec.S) {
-
 	when("running pack", func() {
-
 		var tmpDir string
-		var err error
+
 		it.Before(func() {
 			tmpDir = os.TempDir()
+
+			var err error
 			tmpDir, err = filepath.EvalSymlinks(tmpDir)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -65,7 +66,5 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 -e env1=val1 -e env2=val2]"))
 		})
-
 	})
-
 }
