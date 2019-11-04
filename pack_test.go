@@ -42,6 +42,17 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --buildpack second-bp]"))
 		})
 
+		it("should pack with given builder", func() {
+			packer := dagger.NewPack(tmpDir,
+				dagger.SetBuildpacks("first-bp", "second-bp"),
+				dagger.SetBuilder("bionic"),
+			)
+			app, err := packer.Build()
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(app.BuildLogs()).To(ContainSubstring("[pack build  --builder cloudfoundry/cnb:bionic --buildpack first-bp --buildpack second-bp]"))
+		})
+
 		it("should pack in offline containers", func() {
 			packer := dagger.NewPack(tmpDir,
 				dagger.SetBuildpacks("first-bp"),
@@ -65,6 +76,16 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 -e env1=val1 -e env2=val2]"))
+		})
+
+		it("should not pack with given builder that is not supported", func() {
+			packer := dagger.NewPack(tmpDir,
+				dagger.SetBuildpacks("first-bp", "second-bp"),
+				dagger.SetBuilder("not-supported"),
+			)
+			app, err := packer.Build()
+			Expect(err.Error()).To(ContainSubstring("please use either 'bionic' or 'cflinuxfs3' as input keys to SetBuilder"))
+			Expect(app).To(BeNil())
 		})
 	})
 }
