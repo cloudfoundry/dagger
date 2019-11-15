@@ -62,7 +62,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --network none --no-pull]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --no-pull --network none]"))
 		})
 
 		it("should pack with a given environment", func() {
@@ -86,6 +86,16 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err.Error()).To(ContainSubstring("please use either 'bionic' or 'cflinuxfs3' as input keys to SetBuilder"))
 			Expect(app).To(BeNil())
+		})
+
+		it("should pack with a no-pull flag", func() {
+			packer := dagger.NewPack(tmpDir,
+				dagger.SetImage("test-pack-image"),
+				dagger.NoPull(),
+			)
+			app, err := packer.Build()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --no-pull]"))
 		})
 	})
 }
