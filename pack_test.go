@@ -28,7 +28,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build  --builder cloudfoundry/cnb:cflinuxfs3]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build  --builder cloudfoundry/cnb:cflinuxfs3]"))
 		})
 
 		it("should pack with given buildpacks and image-name", func() {
@@ -39,7 +39,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --buildpack second-bp]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --buildpack second-bp]"))
 		})
 
 		it("should pack with given builder", func() {
@@ -50,7 +50,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build  --builder cloudfoundry/cnb:bionic --buildpack first-bp --buildpack second-bp]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build  --builder cloudfoundry/cnb:bionic --buildpack first-bp --buildpack second-bp]"))
 		})
 
 		it("should pack in offline containers", func() {
@@ -62,7 +62,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --no-pull --network none]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --buildpack first-bp --no-pull --network none]"))
 		})
 
 		it("should pack with a given environment", func() {
@@ -75,7 +75,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			)
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 -e env1=val1 -e env2=val2]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 -e env1=val1 -e env2=val2]"))
 		})
 
 		it("should not pack with given builder that is not supported", func() {
@@ -95,7 +95,7 @@ func testPack(t *testing.T, when spec.G, it spec.S) {
 			)
 			app, err := packer.Build()
 			Expect(err).NotTo(HaveOccurred())
-			Expect(app.BuildLogs()).To(ContainSubstring("[pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --no-pull]"))
+			Expect(app.BuildLogs()).To(ContainSubstring("pack build test-pack-image --builder cloudfoundry/cnb:cflinuxfs3 --no-pull]"))
 		})
 	})
 }
