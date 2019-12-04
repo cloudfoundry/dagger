@@ -10,8 +10,8 @@ github.com/buildpack/libbuildpack/internal
 github.com/buildpack/libbuildpack/logger
 # github.com/cloudfoundry/libcfbuildpack v1.89.0
 github.com/cloudfoundry/libcfbuildpack/helper
-# github.com/cloudfoundry/packit v0.0.0-20191127173036-0f20fa6ae373
-github.com/cloudfoundry/packit/exec
+# github.com/cloudfoundry/packit v0.0.0-20191202164725-43d6fa19d96c
+github.com/cloudfoundry/packit/pexec
 # github.com/golang/protobuf v1.3.2
 github.com/golang/protobuf/proto
 # github.com/google/go-github v17.0.0+incompatible
