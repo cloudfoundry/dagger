@@ -2,7 +2,7 @@ module github.com/cloudfoundry/dagger
 
 require (
 	code.cloudfoundry.org/lager v2.0.0+incompatible
-	github.com/buildpack/libbuildpack v1.24.5
+	github.com/buildpack/libbuildpack v1.25.11
 	github.com/cheggaaa/pb v2.0.7+incompatible // indirect
 	github.com/cloudfoundry/libcfbuildpack v1.89.0
 	github.com/cloudfoundry/packit v0.0.0-20200213185904-9d0fc689e7af
