@@ -3,7 +3,7 @@ module github.com/cloudfoundry/dagger
 require (
 	github.com/buildpack/libbuildpack v1.25.11
 	github.com/cloudfoundry/libcfbuildpack v1.91.23
-	github.com/cloudfoundry/packit v0.0.0-20200213185904-9d0fc689e7af
+	github.com/cloudfoundry/packit v0.0.2
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/onsi/gomega v1.9.0
