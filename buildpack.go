@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -136,6 +137,7 @@ func GetLatestCommunityBuildpack(org, name string) (string, error) {
 		TagName string `json:"tag_name"`
 		Assets  []struct {
 			BrowserDownloadURL string `json:"browser_download_url"`
+			Name               string `json:"name"`
 		} `json:"assets"`
 	}{}
 	request, err := http.NewRequest(http.MethodGet, uri, nil)
@@ -149,7 +151,15 @@ func GetLatestCommunityBuildpack(org, name string) (string, error) {
 		return "", fmt.Errorf("there are no releases for %s", name)
 	}
 
-	return downloadAndUnTarBuildpack(release.Assets[0].BrowserDownloadURL, name, release.TagName, 0)
+	var browserDownloadURL string
+	for _, asset := range release.Assets {
+		if strings.HasSuffix(asset.Name, ".tgz") {
+			browserDownloadURL = asset.BrowserDownloadURL
+			break
+		}
+	}
+
+	return downloadAndUnTarBuildpack(browserDownloadURL, name, release.TagName, 0)
 }
 
 func downloadAndUnTarBuildpack(downloadURL, name, tagName string, level int) (string, error) { //'level' specifies which level of the untarred directory we care about
