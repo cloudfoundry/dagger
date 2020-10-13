@@ -5,7 +5,7 @@ require (
 	github.com/cloudfoundry/libcfbuildpack v1.91.23
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
-	github.com/onsi/gomega v1.10.2
+	github.com/onsi/gomega v1.10.3
 	github.com/paketo-buildpacks/packit v0.2.8
 	github.com/pkg/errors v0.9.1
 	github.com/sclevine/spec v1.4.0
