@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -134,7 +135,23 @@ docker:
 		return errors.Wrap(err, fmt.Sprintf("docker error: failed to get port from container: %s", a.ContainerID))
 	}
 
-	ports := strings.Split(stdout.String(), ":")
+	ipv4PortMapping := ""
+	scanner := bufio.NewScanner(strings.NewReader(stdout.String()))
+	for scanner.Scan() {
+		mapping := scanner.Text()
+		// filter out ipv6
+		// Docker 20.10.6 includes IPv6 port-mappings.
+		// https://docs.docker.com/engine/release-notes/#version-2010
+		if !strings.Contains(mapping, "::") {
+			ipv4PortMapping = mapping
+		}
+	}
+
+	if ipv4PortMapping == "" {
+		return fmt.Errorf("unable to get port map from docker")
+	}
+
+	ports := strings.Split(ipv4PortMapping, ":")
 
 	if len(ports) > 1 {
 		a.port = strings.TrimSpace(ports[1])
