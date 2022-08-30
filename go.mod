@@ -1,12 +1,13 @@
 module github.com/cloudfoundry/dagger
 
 require (
+	cloud.google.com/go v0.57.0 // indirect
 	github.com/buildpack/libbuildpack v1.25.11
 	github.com/cloudfoundry/libcfbuildpack v1.91.23
 	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/onsi/gomega v1.20.1
-	github.com/paketo-buildpacks/packit v0.11.0
+	github.com/paketo-buildpacks/packit v1.3.1
 	github.com/pkg/errors v0.9.1
 	github.com/sclevine/spec v1.4.0
 	golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
