@@ -9,7 +9,7 @@ require (
 	github.com/paketo-buildpacks/packit v1.3.1
 	github.com/pkg/errors v0.9.1
 	github.com/sclevine/spec v1.4.0
-	golang.org/x/oauth2 v0.6.0
+	golang.org/x/oauth2 v0.9.0
 )
 
 go 1.13
